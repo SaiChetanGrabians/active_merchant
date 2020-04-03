@@ -108,7 +108,25 @@ module ActiveMerchant # :nodoc:
       end
 
       def purchase(money, credit_card_or_vault_id, options = {})
+        if credit_card_or_vault_id.start_with?('token')
+          return purchase_with_nonce(money, credit_card_or_vault_id, options = {}) 
+        end
         authorize(money, credit_card_or_vault_id, options.merge(submit_for_settlement: true))
+      end
+
+      def purchase_with_nonce(money, nonce, options = {})
+        commit do
+          result = @braintree_gateway.transaction.sale(
+              amount: localized_amount(money, options[:currency] || default_currency).to_s,
+              payment_method_nonce: nonce,
+              options: {
+                submit_for_settlement: true
+              }
+          )
+          response = Response.new(result.success?, message_from_transaction_result(result), response_params(result), response_options(result))
+          response.cvv_result['message'] = ''
+          response
+        end
       end
 
       def credit(money, credit_card_or_vault_id, options = {})
