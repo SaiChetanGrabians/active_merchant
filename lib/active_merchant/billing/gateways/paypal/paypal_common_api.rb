@@ -1,10 +1,11 @@
-module ActiveMerchant #:nodoc:
-  module Billing #:nodoc:
+module ActiveMerchant # :nodoc:
+  module Billing # :nodoc:
     # This module is included in both PaypalGateway and PaypalExpressGateway
     module PaypalCommonAPI
       include Empty
 
       API_VERSION = '124'
+      API_VERSION_3DS2 = '214.0'
 
       URLS = {
         :test => { :certificate => 'https://api.sandbox.paypal.com/2.0/',
@@ -178,6 +179,11 @@ module ActiveMerchant #:nodoc:
       #     . (period)
       #     {space}
       #
+
+      def inquire(authorization, options = {})
+        transaction_details(authorization)
+      end
+
       def reference_transaction(money, options = {})
         requires!(options, :reference_id)
         commit 'DoReferenceTransaction', build_reference_transaction_request(money, options)

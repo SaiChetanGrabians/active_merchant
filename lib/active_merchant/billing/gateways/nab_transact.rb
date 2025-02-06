@@ -1,7 +1,7 @@
 require 'rexml/document'
 
-module ActiveMerchant #:nodoc:
-  module Billing #:nodoc:
+module ActiveMerchant # :nodoc:
+  module Billing # :nodoc:
     # The National Australia Bank provide a payment gateway that seems to
     # be a rebadged Securepay Australia service, though some differences exist.
     class NabTransactGateway < Gateway
@@ -16,7 +16,7 @@ module ActiveMerchant #:nodoc:
       self.live_periodic_url = 'https://transact.nab.com.au/xmlapi/periodic'
 
       self.supported_countries = ['AU']
-      self.supported_cardtypes = [:visa, :master, :american_express, :diners_club, :jcb]
+      self.supported_cardtypes = %i[visa master american_express diners_club jcb]
 
       self.homepage_url = 'http://transact.nab.com.au'
       self.display_name = 'NAB Transact'
@@ -39,7 +39,7 @@ module ActiveMerchant #:nodoc:
         trigger: 8
       }
 
-      SUCCESS_CODES = ['00', '08', '11', '16', '77']
+      SUCCESS_CODES = %w[00 08 11 16 77]
 
       def initialize(options = {})
         requires!(options, :login, :password)
@@ -233,7 +233,10 @@ module ActiveMerchant #:nodoc:
       def commit(action, request)
         response = parse(ssl_post(test? ? self.test_url : self.live_url, build_request(action, request)))
 
-        Response.new(success?(response), message_from(response), response,
+        Response.new(
+          success?(response),
+          message_from(response),
+          response,
           test: test?,
           authorization: authorization_from(action, response)
         )
@@ -241,7 +244,10 @@ module ActiveMerchant #:nodoc:
 
       def commit_periodic(action, request)
         response = parse(ssl_post(test? ? self.test_periodic_url : self.live_periodic_url, build_periodic_request(action, request)))
-        Response.new(success?(response), message_from(response), response,
+        Response.new(
+          success?(response),
+          message_from(response),
+          response,
           test: test?,
           authorization: authorization_from(action, response)
         )

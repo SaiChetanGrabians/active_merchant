@@ -1,13 +1,13 @@
-module ActiveMerchant #:nodoc:
-  module Billing #:nodoc:
+module ActiveMerchant # :nodoc:
+  module Billing # :nodoc:
     class PinGateway < Gateway
       self.test_url = 'https://test-api.pinpayments.com/1'
       self.live_url = 'https://api.pinpayments.com/1'
 
       self.default_currency = 'AUD'
       self.money_format = :cents
-      self.supported_countries = ['AU']
-      self.supported_cardtypes = [:visa, :master, :american_express]
+      self.supported_countries = %w(AU NZ)
+      self.supported_cardtypes = %i[visa master american_express diners_club discover jcb]
       self.homepage_url = 'http://www.pinpayments.com/'
       self.display_name = 'Pin Payments'
 
@@ -30,6 +30,8 @@ module ActiveMerchant #:nodoc:
         add_address(post, creditcard, options)
         add_capture(post, options)
         add_metadata(post, options)
+        add_3ds(post, options)
+        add_platform_adjustment(post, options)
 
         commit(:post, 'charges', post, options)
       end
@@ -43,6 +45,17 @@ module ActiveMerchant #:nodoc:
         add_customer_data(post, options)
         add_address(post, creditcard, options)
         commit(:post, 'customers', post, options)
+      end
+
+      # Unstore a customer and associated credit card.
+      def unstore(token)
+        customer_token =
+          if /cus_/.match?(token)
+            get_customer_token(token)
+          else
+            token
+          end
+        commit(:delete, "customers/#{CGI.escape(customer_token)}", {}, {})
       end
 
       # Refund a transaction
@@ -62,6 +75,16 @@ module ActiveMerchant #:nodoc:
       # authorization is currently not supported.
       def capture(money, token, options = {})
         commit(:put, "charges/#{CGI.escape(token)}/capture", { amount: amount(money) }, options)
+      end
+
+      # Voids a previously authorized charge.
+      def void(token, options = {})
+        commit(:put, "charges/#{CGI.escape(token)}/void", {}, options)
+      end
+
+      # Verify a previously authorized charge.
+      def verify_3ds(session_token, options = {})
+        commit(:get, "/charges/verify?session_token=#{session_token}", nil, options)
       end
 
       # Updates the credit card for the customer.
@@ -138,7 +161,7 @@ module ActiveMerchant #:nodoc:
             name: creditcard.name
           )
         elsif creditcard.kind_of?(String)
-          if creditcard =~ /^card_/
+          if /^card_/.match?(creditcard)
             post[:card_token] = get_card_token(creditcard)
           else
             post[:customer_token] = creditcard
@@ -156,6 +179,26 @@ module ActiveMerchant #:nodoc:
 
       def add_metadata(post, options)
         post[:metadata] = options[:metadata] if options[:metadata]
+      end
+
+      def add_platform_adjustment(post, options)
+        post[:platform_adjustment] = options[:platform_adjustment] if options[:platform_adjustment]
+      end
+
+      def add_3ds(post, options)
+        if options[:three_d_secure]
+          post[:three_d_secure] = {}
+          if options[:three_d_secure][:enabled]
+            post[:three_d_secure][:enabled] = true
+            post[:three_d_secure][:fallback_ok] = options[:three_d_secure][:fallback_ok] unless options[:three_d_secure][:fallback_ok].nil?
+            post[:three_d_secure][:callback_url] = options[:three_d_secure][:callback_url] if options[:three_d_secure][:callback_url]
+          else
+            post[:three_d_secure][:version] = options[:three_d_secure][:version] if options[:three_d_secure][:version]
+            post[:three_d_secure][:eci] = options[:three_d_secure][:eci] if options[:three_d_secure][:eci]
+            post[:three_d_secure][:cavv] = options[:three_d_secure][:cavv] if options[:three_d_secure][:cavv]
+            post[:three_d_secure][:transaction_id] = options[:three_d_secure][:ds_transaction_id] || options[:three_d_secure][:xid]
+          end
+        end
       end
 
       def headers(params = {})
@@ -179,7 +222,9 @@ module ActiveMerchant #:nodoc:
           body = parse(e.response.body)
         end
 
-        if body['response']
+        if body.nil?
+          no_content_response
+        elsif body['response']
           success_response(body)
         elsif body['error']
           error_response(body)
@@ -209,6 +254,15 @@ module ActiveMerchant #:nodoc:
         )
       end
 
+      def no_content_response
+        Response.new(
+          true,
+          nil,
+          {},
+          test: test?
+        )
+      end
+
       def unparsable_response(raw_response)
         message = 'Invalid JSON response received from Pin Payments. Please contact support@pinpayments.com if you continue to receive this message.'
         message += " (The raw response returned by the API was #{raw_response.inspect})"
@@ -224,10 +278,12 @@ module ActiveMerchant #:nodoc:
       end
 
       def parse(body)
-        JSON.parse(body)
+        JSON.parse(body) unless body.nil? || body.length == 0
       end
 
       def post_data(parameters = {})
+        return nil unless parameters
+
         parameters.to_json
       end
     end
